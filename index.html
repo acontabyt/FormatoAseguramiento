@@ -111,6 +111,27 @@
         <h2 class="text-2xl font-bold text-center text-purple-700 mb-6 font-dancing-script">Iniciar Sesión o Registrarse</h2>
         
         <div class="space-y-4">
+
+            <!-- (NUEVO) Botón de Google -->
+            <button id="googleLoginBtn" class="w-full py-2.5 px-4 bg-white border border-gray-300 text-gray-700 font-semibold rounded-full shadow-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-transform duration-150 ease-in-out active:scale-95 flex items-center justify-center">
+                <!-- Google Icon SVG -->
+                <svg class="w-5 h-5 mr-3" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l8.06 6.25C12.72 13.94 17.94 9.5 24 9.5z"/>
+                    <path fill="#34A853" d="M46.94 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h12.8c-.55 2.72-2.16 4.97-4.66 6.54l7.68 5.95C43.8 37.6 46.94 31.6 46.94 24.5z"/>
+                    <path fill="#FBBC05" d="M10.62 28.47c-.7-2.09-1.1-4.31-1.1-6.69s.4-4.6.1-6.69L2.56 13.22C.9 16.48 0 20.12 0 24c0 3.88.9 7.52 2.56 10.78l8.06-6.25z"/>
+                    <path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.68-5.95c-2.11 1.42-4.8 2.27-7.91 2.27-6.06 0-11.28-4.44-13.22-10.43L2.56 34.78C6.51 42.62 14.62 48 24 48z"/>
+                    <path fill="none" d="M0 0h48v48H0z"/>
+                </svg>
+                Iniciar sesión con Google
+            </button>
+
+            <!-- (NUEVO) Divisor "O" -->
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-gray-300"></div>
+                <span class="flex-shrink mx-4 text-gray-500 text-sm">O inicia con tu correo</span>
+                <div class="flex-grow border-t border-gray-300"></div>
+            </div>
+
             <div>
                 <label for="loginEmail" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
                 <input type="email" id="loginEmail" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500" required>
@@ -439,7 +460,9 @@
             signOut, 
             onAuthStateChanged,
             setPersistence,
-            browserLocalPersistence
+            browserLocalPersistence,
+            GoogleAuthProvider, // <--- NUEVO
+            signInWithPopup     // <--- NUEVO
         } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
         import { 
             getFirestore, 
@@ -506,6 +529,7 @@
             const loginPassword = document.getElementById('loginPassword');
             const loginBtn = document.getElementById('loginBtn');
             const registerBtn = document.getElementById('registerBtn');
+            const googleLoginBtn = document.getElementById('googleLoginBtn'); // <--- NUEVO
             const logoutBtn = document.getElementById('logoutBtn');
             const userEmailDisplay = document.getElementById('userEmailDisplay');
 
@@ -525,6 +549,25 @@
                         // No es necesario iniciar sesión manualmente, onAuthStateChanged lo detectará
                     } catch (error) {
                         console.error("Error en registro:", error.code, error.message);
+                        authMessage.textContent = `Error: ${traducirErrorAuth(error.code)}`;
+                    }
+                });
+            }
+
+            // (NUEVO) Listener para el botón de Google
+            if (googleLoginBtn) {
+                googleLoginBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    authMessage.textContent = '';
+                    const provider = new GoogleAuthProvider();
+                    try {
+                        // Usar persistencia local
+                        await setPersistence(auth, browserLocalPersistence);
+                        const userCredential = await signInWithPopup(auth, provider);
+                        console.log('Usuario ha iniciado sesión con Google:', userCredential.user);
+                        // onAuthStateChanged se encargará de mostrar la app
+                    } catch (error) {
+                        console.error("Error en inicio de sesión con Google:", error.code, error.message);
                         authMessage.textContent = `Error: ${traducirErrorAuth(error.code)}`;
                     }
                 });
@@ -627,6 +670,12 @@
                     return 'El inicio de sesión por correo y contraseña no está habilitado.';
                 case 'auth/invalid-credential':
                     return 'Credenciales inválidas (correo o contraseña).';
+                // --- NUEVOS CASOS DE GOOGLE ---
+                case 'auth/popup-closed-by-user':
+                    return 'La ventana de inicio de sesión fue cerrada.';
+                case 'auth/account-exists-with-different-credential':
+                    return 'Ya existe una cuenta con este correo, pero con un método de inicio de sesión diferente.';
+                // ---
                 default:
                     console.warn("Error de Auth no traducido:", code);
                     return 'Ocurrió un error. Inténtalo de nuevo.';
@@ -704,10 +753,14 @@
 
         function loadDropdowns() {
             if (!currentUserId) return;
+            
+            const selectContador = document.getElementById('selectContador');
+            const selectCliente = document.getElementById('selectCliente');
 
             // Cargar Contadores
             const contadoresPath = getCollectionPath('contadores');
             if (contadoresPath) {
+                if (contadoresUnsubscribe) contadoresUnsubscribe(); // Detener listener anterior
                 contadoresUnsubscribe = onSnapshot(query(collection(db, contadoresPath)), (snapshot) => {
                     const selectedValue = selectContador.value; // Guardar valor actual
                     localContadores = []; // Reset cache local
@@ -734,6 +787,7 @@
             // Cargar Clientes
             const clientesPath = getCollectionPath('clientes');
             if (clientesPath) {
+                if (clientesUnsubscribe) clientesUnsubscribe(); // Detener listener anterior
                 clientesUnsubscribe = onSnapshot(query(collection(db, clientesPath)), (snapshot) => {
                     const selectedValue = selectCliente.value; // Guardar valor actual
                     localClientes = []; // Reset cache local
@@ -836,7 +890,7 @@
         }
         
         async function updateContador() {
-            const selectedDocId = selectContador.value;
+            const selectedDocId = document.getElementById('selectContador').value;
             if (selectedDocId === "") return;
             
             const cont = getContadorForm();
@@ -864,7 +918,7 @@
         }
 
         async function deleteContador() {
-            const selectedDocId = selectContador.value;
+            const selectedDocId = document.getElementById('selectContador').value;
             if (selectedDocId === "") return;
             
             // Usar un modal de confirmación en lugar de window.confirm
@@ -904,7 +958,7 @@
         }
         
         async function updateCliente() {
-            const selectedDocId = selectCliente.value;
+            const selectedDocId = document.getElementById('selectCliente').value;
             if (selectedDocId === "") return;
 
             const cli = getClienteForm();
@@ -929,7 +983,7 @@
         }
 
         async function deleteCliente() {
-            const selectedDocId = selectCliente.value;
+            const selectedDocId = document.getElementById('selectCliente').value;
             if (selectedDocId === "") return;
 
             showConfirmationModal('¿Está seguro de que desea eliminar este cliente?', async () => {
@@ -994,9 +1048,12 @@
             const conceptosPath = getCollectionPath('conceptos');
             if (!conceptosPath) return;
             
+            const conceptosSelect = document.getElementById('conceptosSelect');
+            
             // Escuchar todos los conceptos excepto el 'defaults'
             const q = query(collection(db, conceptosPath), where('inicializado', '!=', true));
             
+            if (conceptosUnsubscribe) conceptosUnsubscribe(); // Detener listener anterior
             conceptosUnsubscribe = onSnapshot(q, (snapshot) => {
                 localConceptos = [];
                 conceptosSelect.innerHTML = '';
@@ -1021,14 +1078,15 @@
                 });
                 
                 // Resetear estado de edición
-                conceptoEditInput.value = '';
-                conceptoBtnAgregar.style.display = 'inline-flex';
-                conceptoBtnGuardarEdicion.style.display = 'none';
+                document.getElementById('conceptoEditInput').value = '';
+                document.getElementById('conceptoBtnAgregar').style.display = 'inline-flex';
+                document.getElementById('conceptoBtnGuardarEdicion').style.display = 'none';
                 edicionConceptoId = null;
             }, (error) => console.error("Error al cargar conceptos UI:", error));
         }
 
-        conceptoBtnAgregar.addEventListener('click', async () => {
+        document.getElementById('conceptoBtnAgregar').addEventListener('click', async () => {
+            const conceptoEditInput = document.getElementById('conceptoEditInput');
             const nuevoConceptoNombre = conceptoEditInput.value.trim();
             if (nuevoConceptoNombre) {
                 if (localConceptos.some(c => c.nombre.toLowerCase() === nuevoConceptoNombre.toLowerCase())) {
@@ -1053,21 +1111,21 @@
             }
         });
 
-        conceptoBtnEditar.addEventListener('click', () => {
-            const selectedId = conceptosSelect.value;
+        document.getElementById('conceptoBtnEditar').addEventListener('click', () => {
+            const selectedId = document.getElementById('conceptosSelect').value;
             const concepto = localConceptos.find(c => c.id === selectedId);
             if (concepto) {
-                conceptoEditInput.value = concepto.nombre;
+                document.getElementById('conceptoEditInput').value = concepto.nombre;
                 edicionConceptoId = selectedId;
-                conceptoBtnAgregar.style.display = 'none';
-                conceptoBtnGuardarEdicion.style.display = 'inline-flex';
+                document.getElementById('conceptoBtnAgregar').style.display = 'none';
+                document.getElementById('conceptoBtnGuardarEdicion').style.display = 'inline-flex';
             } else {
                 showMessage('Seleccione un concepto de la lista para editar.', 'error');
             }
         });
 
-        conceptoBtnGuardarEdicion.addEventListener('click', async () => {
-            const conceptoEditadoNombre = conceptoEditInput.value.trim();
+        document.getElementById('conceptoBtnGuardarEdicion').addEventListener('click', async () => {
+            const conceptoEditadoNombre = document.getElementById('conceptoEditInput').value.trim();
             if (conceptoEditadoNombre && edicionConceptoId) {
                 // Verificar duplicados (excluyendo el id actual)
                 const duplicado = localConceptos.some(c => 
@@ -1094,8 +1152,8 @@
             }
         });
 
-        conceptoBtnEliminar.addEventListener('click', () => {
-            const selectedId = conceptosSelect.value;
+        document.getElementById('conceptoBtnEliminar').addEventListener('click', () => {
+            const selectedId = document.getElementById('conceptosSelect').value;
             if (selectedId) {
                 showConfirmationModal('¿Está seguro de que desea eliminar este concepto?', async () => {
                     const conceptoRef = doc(db, getCollectionPath('conceptos'), selectedId);
@@ -1123,6 +1181,7 @@
             contadorSelloInput.value = ''; // Limpiar el input de archivo
             selloPreview.src = ''; // Limpiar la previsualización
             selloPreview.classList.add('hidden'); // Ocultar previsualización
+            const selectContador = document.getElementById('selectContador');
             if (limpiarSelect && selectContador) selectContador.value = "";
             document.getElementById('deleteContadorBtn').style.display = 'none';
             document.getElementById('updateContadorBtn').style.display = 'none';
@@ -1132,6 +1191,7 @@
             document.getElementById('clienteTratamiento').value = 'Sr.';
             document.getElementById('clienteNombre').value = '';
             document.getElementById('clienteCedula').value = '';
+            const selectCliente = document.getElementById('selectCliente');
             if (limpiarSelect && selectCliente) selectCliente.value = "";
             document.getElementById('deleteClienteBtn').style.display = 'none';
             document.getElementById('updateClienteBtn').style.display = 'none';
@@ -1147,9 +1207,14 @@
             clearFormContador();
             clearFormCliente();
             setFechasDefault(); // Restablecer fechas
-            showMessage('Formulario limpiado.', 'success');
+            // No mostrar mensaje de "limpiado" al cerrar sesión
+            // showMessage('Formulario limpiado.', 'success');
         }
-        document.getElementById('clearFormBtn').addEventListener('click', clearForm);
+        document.getElementById('clearFormBtn').addEventListener('click', (e) => {
+             e.preventDefault();
+             clearForm();
+             showMessage('Formulario limpiado.', 'success');
+        });
         // --- Fin Limpiar Formulario ---
 
         // --- Modal de Confirmación (Reemplazo de window.confirm) ---
@@ -1302,8 +1367,8 @@
             addIncomeItem(); // Agregar un item de ingreso por defecto
             setFechasDefault(); // Establecer fechas
         });
-        selectContador.addEventListener('change', (e) => fillContadorForm(e.target.value));
-        selectCliente.addEventListener('change', (e) => fillClienteForm(e.target.value));
+        document.getElementById('selectContador').addEventListener('change', (e) => fillContadorForm(e.target.value));
+        document.getElementById('selectCliente').addEventListener('change', (e) => fillClienteForm(e.target.value));
         document.getElementById('saveContadorBtn').addEventListener('click', saveContador);
         document.getElementById('updateContadorBtn').addEventListener('click', updateContador);
         document.getElementById('deleteContadorBtn').addEventListener('click', deleteContador);
@@ -1464,338 +1529,342 @@
 
         // --- Función principal para generar el PDF (Renombrada a buildPDF) ---
         function buildPDF(sealDataUrl, originalSealWidth, originalSealHeight) { // <--- Parámetros añadidos
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF('p', 'pt', 'letter'); // Tamaño carta
+            try { // <--- (NUEVO) Envolver todo en un try/catch
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'pt', 'letter'); // Tamaño carta
 
-            // --- 1. Recolectar Datos ---
-            const contadorNombre = document.getElementById('contadorNombre').value;
-            const contadorCpc = document.getElementById('contadorCpc').value;
-            const contadorRif = document.getElementById('contadorRif').value; 
-            const clienteTratamiento = document.getElementById('clienteTratamiento').value;
-            const clienteNombre = document.getElementById('clienteNombre').value;
-            const clienteCedula = document.getElementById('clienteCedula').value;
-            const entidadDirigida = document.getElementById('entidadDirigida').value;
-            const motivoInforme = document.getElementById('motivoInforme').value;
-            const lugar = document.getElementById('lugar').value;
-            const fechaDocumentoRaw = document.getElementById('fechaDocumento').value;
-            const fechaDesdeRaw = document.getElementById('fechaDesde').value;
-            const fechaHastaRaw = document.getElementById('fechaHasta').value;
+                // --- 1. Recolectar Datos ---
+                const contadorNombre = document.getElementById('contadorNombre').value;
+                const contadorCpc = document.getElementById('contadorCpc').value;
+                const contadorRif = document.getElementById('contadorRif').value; 
+                const clienteTratamiento = document.getElementById('clienteTratamiento').value;
+                const clienteNombre = document.getElementById('clienteNombre').value;
+                const clienteCedula = document.getElementById('clienteCedula').value;
+                const entidadDirigida = document.getElementById('entidadDirigida').value;
+                const motivoInforme = document.getElementById('motivoInforme').value;
+                const lugar = document.getElementById('lugar').value;
+                const fechaDocumentoRaw = document.getElementById('fechaDocumento').value;
+                const fechaDesdeRaw = document.getElementById('fechaDesde').value;
+                const fechaHastaRaw = document.getElementById('fechaHasta').value;
 
-            // Formatear fechas
-            const fechaDocumentoLarga = `${lugar}, ${formatDate(fechaDocumentoRaw, { format: 'dd de M de yyyy' })}`;
-            const fechaDesde = formatDate(fechaDesdeRaw);
-            const fechaHasta = formatDate(fechaHastaRaw);
-            const fechaDesdeLarga = formatDate(fechaDesdeRaw, { format: 'dd de M de yyyy' });
-            const fechaHastaLarga = formatDate(fechaHastaRaw, { format: 'dd de M de yyyy' });
-            
-            // Recolectar ingresos
-            const incomeItems = document.querySelectorAll('.income-item');
-            let totalIngresos = 0;
-            const tableData = [];
-            incomeItems.forEach(item => {
-                const concept = item.querySelector('.income-concept').value;
-                const amountStr = item.querySelector('.income-amount').value;
-                const amount = parseFloat(parseFormattedNumber(amountStr)) || 0;
+                // Formatear fechas
+                const fechaDocumentoLarga = `${lugar}, ${formatDate(fechaDocumentoRaw, { format: 'dd de M de yyyy' })}`;
+                const fechaDesde = formatDate(fechaDesdeRaw);
+                const fechaHasta = formatDate(fechaHastaRaw);
+                const fechaDesdeLarga = formatDate(fechaDesdeRaw, { format: 'dd de M de yyyy' });
+                const fechaHastaLarga = formatDate(fechaHastaRaw, { format: 'dd de M de yyyy' });
                 
-                if (concept && amount > 0) {
-                    tableData.push([concept, `Bs. ${formatCurrency(amount)}`]);
-                    totalIngresos += amount;
-                }
-            });
-
-            // Calcular promedio mensual
-            const numMeses = calculateMonths(fechaDesdeRaw, fechaHastaRaw);
-            const promedioMensual = totalIngresos / numMeses;
-
-            // --- 2. Definir Variables y Estilos del PDF ---
-            
-            // Márgenes en puntos (1 cm = 28.35 pt)
-            const marginTop = 5 * 28.35; // 5cm
-            const marginBottom = 3 * 28.35; // 3cm
-            const marginLeft = 60;
-            const marginRight = 60;
-            const pageHeight = doc.internal.pageSize.getHeight();
-            const usableWidth = doc.internal.pageSize.getWidth() - marginLeft - marginRight;
-            let currentY = marginTop; // Posición Y inicial
-
-            doc.setFont('helvetica', 'normal');
-
-            // Función helper para agregar texto (MODIFICADA)
-            function addText(text, options = {}) {
-                const {
-                    fontSize = 11, // Tamaño base 11pt
-                    fontStyle = 'normal',
-                    align = 'justify', // Justificado por defecto
-                    indent = 0,
-                    spacing = 15,
-                    lineSpacing = 1.5 // (Interlineado)
-                } = options;
-                
-                doc.setFontSize(fontSize);
-                doc.setFont('helvetica', fontStyle);
-                
-                let x;
-                const maxWidth = usableWidth - indent;
-
-                if (align === 'center') {
-                    x = doc.internal.pageSize.getWidth() / 2;
-                } else if (align === 'right') {
-                    x = doc.internal.pageSize.getWidth() - marginRight;
-                } else {
-                    x = marginLeft + indent;
-                }
-
-                // Calculamos la altura del bloque de texto
-                const lines = doc.splitTextToSize(text, maxWidth);
-                // Ajuste de cálculo de altura para mayor precisión
-                const textHeight = (lines.length * fontSize * lineSpacing) - (fontSize * (lineSpacing - 1));
-                
-                // Comprobar si cabe en la página actual
-                if (currentY + textHeight > pageHeight - marginBottom) {
-                    doc.addPage();
-                    currentY = marginTop; // Margen superior en nueva página
-                }
-
-                // Dibujar el texto
-                doc.text(text, x, currentY, { 
-                    align: align, 
-                    maxWidth: maxWidth,
-                    lineHeightFactor: lineSpacing // Factor de interlineado
+                // Recolectar ingresos
+                const incomeItems = document.querySelectorAll('.income-item');
+                let totalIngresos = 0;
+                const tableData = [];
+                incomeItems.forEach(item => {
+                    const concept = item.querySelector('.income-concept').value;
+                    const amountStr = item.querySelector('.income-amount').value;
+                    const amount = parseFloat(parseFormattedNumber(amountStr)) || 0;
+                    
+                    if (concept && amount > 0) {
+                        tableData.push([concept, `Bs. ${formatCurrency(amount)}`]);
+                        totalIngresos += amount;
+                    }
                 });
+
+                // Calcular promedio mensual
+                const numMeses = calculateMonths(fechaDesdeRaw, fechaHastaRaw);
+                const promedioMensual = totalIngresos / numMeses;
+
+                // --- 2. Definir Variables y Estilos del PDF ---
                 
-                // Actualizar currentY
-                currentY += textHeight + spacing;
-            }
+                // Márgenes en puntos (1 cm = 28.35 pt)
+                const marginTop = 5 * 28.35; // 5cm
+                const marginBottom = 3 * 28.35; // 3cm
+                const marginLeft = 60;
+                const marginRight = 60;
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const usableWidth = doc.internal.pageSize.getWidth() - marginLeft - marginRight;
+                let currentY = marginTop; // Posición Y inicial
 
-            // --- 3. Construir el PDF (Página 1) ---
-            
-            addText('INFORME DE ENCARGOS DE ASEGURAMIENTO DEL CONTADOR PÚBLICO INDEPENDIENTE', { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 30 }); 
-            addText('Alcance', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText(`He revisado la evidencia inherente a los ingresos percibidos por el ${clienteTratamiento} ${clienteNombre}, con cedula de identidad N.º ${clienteCedula}, durante el periodo comprendido desde el ${fechaDesde} hasta el ${fechaHasta}, presentado en la relación de ingresos adjunta, correspondiente a su actividad económica según se detalla en el anexo.`, { indent: 20, spacing: 25 });
-            addText('Responsabilidad de la persona que percibe los ingresos', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText(`El ${clienteTratamiento} ${clienteNombre}, es responsable de la preparación y presentación del importe de sus ingresos que se adjunta en este informe, incluyendo la integridad, legalidad y veracidad de los documentos suministrados. Esta responsabilidad incluye la aseveración de que todos y cada uno de los ingresos detallados en la relación, provienen de actividades legítimas y de comprobable licito ejercicio.`, { indent: 20, spacing: 25 });
-            addText('Responsabilidad del Contador Público Independiente', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText(`Mi responsabilidad es expresar una opinión sobre la relación de ingresos obtenida por el ${clienteTratamiento} ${clienteNombre}, durante el periodo señalado de acuerdo con mis procedimientos, los cuales he realizado de conformidad con la Norma Internacional para encargos de aseguramiento, los cuales he realizado de conformidad con la Normas Internacionales de Encargos de Aseguramiento NIEA 3000, esta norma prevé que cumpla con los requerimientos éticos y que planifique y realice los procedimientos para obtener una seguridad razonable de que, en todos los aspectos materiales, la relación está presentada razonablemente.`, { indent: 20, spacing: 15 });
-            addText(`Un Encargo de Aseguramiento implica llevar a cabo procedimientos para obtener evidencia acerca de la razonabilidad de las aseveraciones emitidas por el responsable. Los procedimientos seleccionados dependen del juicio profesional del contador público, que incluye evaluar los riesgos acerca de que los ingresos no estén presentados razonablemente. El objetivo es obtener una seguridad razonable como base de una forma positiva de expresión. Por lo tanto, mi responsabilidad es expresar una opinión sobre los ingresos del ${clienteTratamiento} ${clienteNombre}, para el periodo ${fechaDesde} hasta el ${fechaHasta}, con base al examen sobre la evidencia obtenida.`, { indent: 20, spacing: 25 });
+                doc.setFont('helvetica', 'normal');
 
-            // --- Forzar Página 2 ---
-            doc.addPage();
-            currentY = marginTop; // Reiniciar Y en la nueva página
+                // Función helper para agregar texto (MODIFICADA)
+                function addText(text, options = {}) {
+                    const {
+                        fontSize = 11, // Tamaño base 11pt
+                        fontStyle = 'normal',
+                        align = 'justify', // Justificado por defecto
+                        indent = 0,
+                        spacing = 15,
+                        lineSpacing = 1.5 // (Interlineado)
+                    } = options;
+                    
+                    doc.setFontSize(fontSize);
+                    doc.setFont('helvetica', fontStyle);
+                    
+                    let x;
+                    const maxWidth = usableWidth - indent;
 
-            // --- Construir el PDF (Página 2) ---
-            addText('Identificación del criterio de evaluación', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText(`Mi trabajo consistió, en examinar los estados de cuenta de bancos, declaraciones de impuesto, contratos, entre otros documentos inherentes, comprobar y confirmar los ingresos relacionados por el ${clienteTratamiento} ${clienteNombre}, para el periodo señalado. Mi opinión se formó sobre la base de la evidencia obtenida suficiente y adecuada. El criterio utilizado para emitirla fue la definición de ingresos contenida en la sección 2, conceptos y principios generales, de las normas internacionales de información financiera para las pequeñas y medianas entidades aun cuando no le son aplicables a personas naturales no comerciantes.`, { indent: 20, spacing: 25 });
-            addText('Opinión', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText('Con base en el trabajo efectuado descrito en este informe, no ha llamado mi atención algo que me haga pensar que la relación de ingresos que se anexa, en todos los aspectos importantes, no sea razonable y que los ingresos detallados en la relación, no provenga de actividades legítimas y de comprobable lícito ejercicio.', { indent: 20, spacing: 25 });
-            addText('Usuarios Previstos y Propósitos', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
-            addText(`Este informe y la relación que se adjunta están dirigidos únicamente al ${entidadDirigida} el cual lo ha requerido para ${motivoInforme}.`, { indent: 20, spacing: 40 });
-
-
-            // --- Firma del Contador (al final de la página) ---
-            
-            // 1. Definir parámetros de la firma
-            const fontSize = 11;
-            const lineSpacing = 1.0; // Interlineado simple para la firma
-            const spacing = 12; // Espacio entre líneas (original, para espacio con fecha)
-            
-            // **** MODIFICACIÓN: Interlineado de la firma a 12pt (igual que cliente) ****
-            const spacingFirma = 12; // Interlineado de 12 ptos solicitado por el usuario
-
-            // 2. Función interna para calcular la altura de un bloque de texto
-            const calcHeight = (text, ls = lineSpacing) => {
-                const lines = doc.splitTextToSize(text, usableWidth); // Asumir usableWidth para centrado
-                const h = (lines.length * fontSize * ls) - (fontSize * (ls - 1));
-                return h;
-            };
-
-            // 3. Calcular la altura de CADA línea de la firma
-            const h1 = calcHeight('________________________________');
-            const h2 = calcHeight(`${contadorNombre}`);
-            const h3 = calcHeight(`Rif: ${contadorRif}`);
-            const h4 = calcHeight(`Contador Público C.P.C. N ${contadorCpc}`); 
-            const h5 = calcHeight(fechaDocumentoLarga, 1.5); // La fecha usa interlineado 1.5
-
-            // 4. Calcular la altura total del bloque (**** USANDO spacingFirma ****)
-            // Ajustar altura si el RIF está vacío
-            let signatureBlockHeight = h1 + spacingFirma + h2 + spacingFirma + h4;
-            if (contadorRif) {
-                signatureBlockHeight += spacingFirma + h3;
-            }
-            
-            const dateHeight = h5;
-            
-            // 5. Calcular Y de la firma (usando 'spacing' original para separar de la fecha)
-            const sigBlockY = pageHeight - marginBottom - dateHeight - (spacing * 2) - signatureBlockHeight;
-
-            // --- *** MODIFICACIÓN: Agregar Sello del Contador *** ---
-            if (sealDataUrl && originalSealWidth > 0 && originalSealHeight > 0) {
-                
-                // **** MODIFICACIÓN: Tamaño 5.30cm x 2.10cm ****
-                const cm = 28.35; // Puntos por cm
-                const maxSealWidth = 5.30 * cm;  // 150.005 pt
-                const maxSealHeight = 2.10 * cm; // 59.535 pt
-
-                // Convertir dimensiones originales (px) a puntos (asumiendo 72 ppi para la conversión interna de jsPDF)
-                // Nota: jsPDF addImage maneja la escala, pero calculamos la proporción nosotros mismos para asegurar.
-                
-                let sealWidth = originalSealWidth;
-                let sealHeight = originalSealHeight;
-                
-                // Calcular ratios
-                const widthRatio = maxSealWidth / sealWidth;
-                const heightRatio = maxSealHeight / sealHeight;
-                
-                // Usar el ratio MÁS PEQUEÑO para escalar y mantener la proporción
-                const ratio = Math.min(widthRatio, heightRatio); 
-                
-                sealWidth = sealWidth * ratio;
-                sealHeight = sealHeight * ratio;
-
-                // Si la imagen es más pequeña que el máximo, no la agrandamos
-                if (originalSealWidth < maxSealWidth && originalSealHeight < maxSealHeight) {
-                    sealWidth = originalSealWidth;
-                    sealHeight = originalSealHeight;
-                }
-
-                // Posición X (Derecha)
-                const sealX = doc.internal.pageSize.getWidth() - marginRight - sealWidth;
-                
-                // --- AJUSTE DE POSICIÓN Y ---
-                // Posición Y (Alineada justo encima de la línea de la firma, con un pequeño espacio)
-                const sealY = sigBlockY - sealHeight - (spacing / 2); // Subir el sello un poco
-
-                // Comprobar si cabe
-                if (sealY > marginTop && sealY + sealHeight <= pageHeight - marginBottom) {
-                    // Agregar la imagen del sello
-                    doc.addImage(sealDataUrl, 'PNG', sealX, sealY, sealWidth, sealHeight);
-                } else {
-                     // Si no cabe (improbable), ponerlo en el margen superior
-                     doc.addImage(sealDataUrl, 'PNG', sealX, marginTop, sealWidth, sealHeight);
-                }
-            }
-            // --- *** FIN DEL BLOQUE DEL SELLO *** ---
-            
-            // ----- RE-CÁLCULO DE FIRMA -----
-            // Posicionar la fecha al final
-            currentY = pageHeight - marginBottom - dateHeight;
-            addText(fechaDocumentoLarga, { align: 'left', spacing: 0, fontSize: 11, lineSpacing: 1.5 }); // Dibujar fecha al final, alineada izquierda
-
-            // Posicionar la firma justo encima de la fecha
-            // Usamos 'spacing' (12) para el espacio entre la fecha y el bloque
-            currentY = pageHeight - marginBottom - dateHeight - (spacing * 2) - signatureBlockHeight;
-            
-            // **** MODIFICACIÓN: 'spacing' cambiado a spacingFirma (12) y orden/estilo de firma ****
-            addText('________________________________', { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing });
-            addText(`${contadorNombre}`, { align: 'center', spacing: spacingFirma, fontSize: 11, fontStyle: 'bold', lineSpacing: lineSpacing });
-            addText(`Contador Público C.P.C. N ${contadorCpc}`, { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing });
-            // Solo mostrar RIF si se ingresó
-            if (contadorRif) {
-                addText(`Rif: ${contadorRif}`, { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing }); 
-            }
-            
-            // --- Forzar Página 3 (Anexo) ---
-            doc.addPage();
-            currentY = marginTop;
-
-            // --- Construir el PDF (Página 3 - Anexo) ---
-            
-            addText(`${clienteNombre.toUpperCase()}`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 10, lineSpacing: 1.5 });
-            addText(`${clienteCedula}`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 30, lineSpacing: 1.5 });
-            addText(`INGRESOS MENSUALES EXPRESADO EN BOLÍVARES (BS)`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 20, lineSpacing: 1.5 });
-            addText(`Los ingresos corresponden al período desde el ${fechaDesdeLarga} hasta el ${fechaHastaLarga} y los mismos se derivan de:`, { fontSize: 11, align: 'justify', spacing: 30, lineSpacing: 1.5 });
-            
-            doc.autoTable({
-                head: [['Detalle de los ingresos del periodo:', 'Bolívares']],
-                body: tableData,
-                // --- AJUSTE DE ALINEACIÓN DEL FOOTER ---
-                // Se definen las celdas como objetos para forzar sus estilos individuales
-                foot: [
-                    [
-                        { content: 'Total Ingresos', styles: { halign: 'left' } },
-                        { content: `Bs. ${formatCurrency(totalIngresos)}`, styles: { halign: 'right' } }
-                    ]
-                ],
-                startY: currentY,
-                margin: { left: marginLeft, right: marginRight, top: marginTop, bottom: marginBottom },
-                theme: 'grid',
-                headStyles: { 
-                    fillColor: [221, 214, 254], 
-                    textColor: [31, 41, 55], 
-                    fontStyle: 'bold', 
-                    halign: 'center', 
-                    fontSize: 11, 
-                    font: 'helvetica',
-                    lineColor: [209, 213, 219], 
-                    lineWidth: 0.5
-                },
-                footStyles: { 
-                    fillColor: [243, 244, 246], 
-                    textColor: [0, 0, 0], 
-                    fontStyle: 'bold', 
-                    fontSize: 11, 
-                    font: 'helvetica',
-                    lineColor: [209, 213, 219],
-                    lineWidth: 0.5
-                },
-                bodyStyles: { 
-                    font: 'helvetica', 
-                    fontSize: 11,
-                    lineColor: [209, 213, 219],
-                    lineWidth: 0.5
-                },
-                columnStyles: {
-                    0: { halign: 'left' },
-                    1: { halign: 'right' },
-                },
-                didDrawPage: (data) => {
-                    // Si autoTable crea una nueva página, resetear currentY
-                    if (data.pageNumber > 3) {
-                        currentY = marginTop;
+                    if (align === 'center') {
+                        x = doc.internal.pageSize.getWidth() / 2;
+                    } else if (align === 'right') {
+                        x = doc.internal.pageSize.getWidth() - marginRight;
                     } else {
-                        currentY = data.cursor.y;
+                        x = marginLeft + indent;
+                    }
+
+                    // Calculamos la altura del bloque de texto
+                    const lines = doc.splitTextToSize(text, maxWidth);
+                    // Ajuste de cálculo de altura para mayor precisión
+                    const textHeight = (lines.length * fontSize * lineSpacing) - (fontSize * (lineSpacing - 1));
+                    
+                    // Comprobar si cabe en la página actual
+                    if (currentY + textHeight > pageHeight - marginBottom) {
+                        doc.addPage();
+                        currentY = marginTop; // Margen superior en nueva página
+                    }
+
+                    // Dibujar el texto
+                    doc.text(text, x, currentY, { 
+                        align: align, 
+                        maxWidth: maxWidth,
+                        lineHeightFactor: lineSpacing // Factor de interlineado
+                    });
+                    
+                    // Actualizar currentY
+                    currentY += textHeight + spacing;
+                }
+
+                // --- 3. Construir el PDF (Página 1) ---
+                
+                addText('INFORME DE ENCARGOS DE ASEGURAMIENTO DEL CONTADOR PÚBLICO INDEPENDIENTE', { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 30 }); 
+                addText('Alcance', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText(`He revisado la evidencia inherente a los ingresos percibidos por el ${clienteTratamiento} ${clienteNombre}, con cedula de identidad N.º ${clienteCedula}, durante el periodo comprendido desde el ${fechaDesde} hasta el ${fechaHasta}, presentado en la relación de ingresos adjunta, correspondiente a su actividad económica según se detalla en el anexo.`, { indent: 20, spacing: 25 });
+                addText('Responsabilidad de la persona que percibe los ingresos', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText(`El ${clienteTratamiento} ${clienteNombre}, es responsable de la preparación y presentación del importe de sus ingresos que se adjunta en este informe, incluyendo la integridad, legalidad y veracidad de los documentos suministrados. Esta responsabilidad incluye la aseveración de que todos y cada uno de los ingresos detallados en la relación, provienen de actividades legítimas y de comprobable licito ejercicio.`, { indent: 20, spacing: 25 });
+                addText('Responsabilidad del Contador Público Independiente', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText(`Mi responsabilidad es expresar una opinión sobre la relación de ingresos obtenida por el ${clienteTratamiento} ${clienteNombre}, durante el periodo señalado de acuerdo con mis procedimientos, los cuales he realizado de conformidad con la Norma Internacional para encargos de aseguramiento, los cuales he realizado de conformidad con la Normas Internacionales de Encargos de Aseguramiento NIEA 3000, esta norma prevé que cumpla con los requerimientos éticos y que planifique y realice los procedimientos para obtener una seguridad razonable de que, en todos los aspectos materiales, la relación está presentada razonablemente.`, { indent: 20, spacing: 15 });
+                addText(`Un Encargo de Aseguramiento implica llevar a cabo procedimientos para obtener evidencia acerca de la razonabilidad de las aseveraciones emitidas por el responsable. Los procedimientos seleccionados dependen del juicio profesional del contador público, que incluye evaluar los riesgos acerca de que los ingresos no estén presentados razonablemente. El objetivo es obtener una seguridad razonable como base de una forma positiva de expresión. Por lo tanto, mi responsabilidad es expresar una opinión sobre los ingresos del ${clienteTratamiento} ${clienteNombre}, para el periodo ${fechaDesde} hasta el ${fechaHasta}, con base al examen sobre la evidencia obtenida.`, { indent: 20, spacing: 25 });
+
+                // --- Forzar Página 2 ---
+                doc.addPage();
+                currentY = marginTop; // Reiniciar Y en la nueva página
+
+                // --- Construir el PDF (Página 2) ---
+                addText('Identificación del criterio de evaluación', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText(`Mi trabajo consistió, en examinar los estados de cuenta de bancos, declaraciones de impuesto, contratos, entre otros documentos inherentes, comprobar y confirmar los ingresos relacionados por el ${clienteTratamiento} ${clienteNombre}, para el periodo señalado. Mi opinión se formó sobre la base de la evidencia obtenida suficiente y adecuada. El criterio utilizado para emitirla fue la definición de ingresos contenida en la sección 2, conceptos y principios generales, de las normas internacionales de información financiera para las pequeñas y medianas entidades aun cuando no le son aplicables a personas naturales no comerciantes.`, { indent: 20, spacing: 25 });
+                addText('Opinión', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText('Con base en el trabajo efectuado descrito en este informe, no ha llamado mi atención algo que me haga pensar que la relación de ingresos que se anexa, en todos los aspectos importantes, no sea razonable y que los ingresos detallados en la relación, no provenga de actividades legítimas y de comprobable lícito ejercicio.', { indent: 20, spacing: 25 });
+                addText('Usuarios Previstos y Propósitos', { fontSize: 11, fontStyle: 'bold', align: 'left', spacing: 20 });
+                addText(`Este informe y la relación que se adjunta están dirigidos únicamente al ${entidadDirigida} el cual lo ha requerido para ${motivoInforme}.`, { indent: 20, spacing: 40 });
+
+
+                // --- Firma del Contador (al final de la página) ---
+                
+                // 1. Definir parámetros de la firma
+                const fontSize = 11;
+                const lineSpacing = 1.0; // Interlineado simple para la firma
+                const spacing = 12; // Espacio entre líneas (original, para espacio con fecha)
+                
+                // **** MODIFICACIÓN: Interlineado de la firma a 12pt (igual que cliente) ****
+                const spacingFirma = 12; // Interlineado de 12 ptos solicitado por el usuario
+
+                // 2. Función interna para calcular la altura de un bloque de texto
+                const calcHeight = (text, ls = lineSpacing) => {
+                    const lines = doc.splitTextToSize(text, usableWidth); // Asumir usableWidth para centrado
+                    const h = (lines.length * fontSize * ls) - (fontSize * (ls - 1));
+                    return h;
+                };
+
+                // 3. Calcular la altura de CADA línea de la firma
+                const h1 = calcHeight('________________________________');
+                const h2 = calcHeight(`${contadorNombre}`);
+                const h3 = calcHeight(`Rif: ${contadorRif}`);
+                const h4 = calcHeight(`Contador Público C.P.C. N ${contadorCpc}`); 
+                const h5 = calcHeight(fechaDocumentoLarga, 1.5); // La fecha usa interlineado 1.5
+
+                // 4. Calcular la altura total del bloque (**** USANDO spacingFirma ****)
+                // Ajustar altura si el RIF está vacío
+                let signatureBlockHeight = h1 + spacingFirma + h2 + spacingFirma + h4;
+                if (contadorRif) {
+                    signatureBlockHeight += spacingFirma + h3;
+                }
+                
+                const dateHeight = h5;
+                
+                // 5. Calcular Y de la firma (usando 'spacing' original para separar de la fecha)
+                const sigBlockY = pageHeight - marginBottom - dateHeight - (spacing * 2) - signatureBlockHeight;
+
+                // --- *** MODIFICACIÓN: Agregar Sello del Contador *** ---
+                if (sealDataUrl && originalSealWidth > 0 && originalSealHeight > 0) {
+                    
+                    // **** MODIFICACIÓN: Tamaño 5.30cm x 2.10cm ****
+                    const cm = 28.35; // Puntos por cm
+                    const maxSealWidth = 5.30 * cm;  // 150.005 pt
+                    const maxSealHeight = 2.10 * cm; // 59.535 pt
+                    
+                    let sealWidth = originalSealWidth;
+                    let sealHeight = originalSealHeight;
+                    
+                    // Calcular ratios
+                    const widthRatio = maxSealWidth / sealWidth;
+                    const heightRatio = maxSealHeight / sealHeight;
+                    
+                    // Usar el ratio MÁS PEQUEÑO para escalar y mantener la proporción
+                    const ratio = Math.min(widthRatio, heightRatio); 
+                    
+                    sealWidth = sealWidth * ratio;
+                    sealHeight = sealHeight * ratio;
+
+                    // Si la imagen es más pequeña que el máximo, no la agrandamos
+                    if (originalSealWidth * (72/96) < maxSealWidth && originalSealHeight * (72/96) < maxSealHeight) {
+                        // (jsPDF usa 72dpi, pantallas a menudo 96dpi, escalar px a pt)
+                        sealWidth = originalSealWidth * (72/96); 
+                        sealHeight = originalSealHeight * (72/96);
+                    }
+
+                    // Posición X (Derecha)
+                    const sealX = doc.internal.pageSize.getWidth() - marginRight - sealWidth;
+                    
+                    // --- AJUSTE DE POSICIÓN Y ---
+                    // Posición Y (Alineada justo encima de la línea de la firma, con un pequeño espacio)
+                    const sealY = sigBlockY - sealHeight - (spacing / 2); // Subir el sello un poco
+
+                    // Comprobar si cabe
+                    if (sealY > marginTop && sealY + sealHeight <= pageHeight - marginBottom) {
+                        // Agregar la imagen del sello
+                        doc.addImage(sealDataUrl, 'PNG', sealX, sealY, sealWidth, sealHeight);
+                    } else {
+                         // Si no cabe (improbable), ponerlo en el margen superior
+                         doc.addImage(sealDataUrl, 'PNG', sealX, marginTop, sealWidth, sealHeight);
                     }
                 }
-            });
+                // --- *** FIN DEL BLOQUE DEL SELLO *** ---
+                
+                // ----- RE-CÁLCULO DE FIRMA -----
+                // Posicionar la fecha al final
+                currentY = pageHeight - marginBottom - dateHeight;
+                addText(fechaDocumentoLarga, { align: 'left', spacing: 0, fontSize: 11, lineSpacing: 1.5 }); // Dibujar fecha al final, alineada izquierda
 
-            currentY = doc.autoTable.previous.finalY + 30; // Actualizar Y después de la tabla
-
-            // --- Control de página para la firma del cliente ---
-            // Calcular altura de la firma del cliente
-            const hLegitimacion = calcHeight('LEGITIMACION DE CAPITALES', 1.5) + 15 + calcHeight('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', 1.5) + 50;
-            const hFirmaCliente = calcHeight('_____________________________________', 1.0) + 12 + calcHeight(`${clienteNombre}`, 1.0) + 12 + calcHeight(`C.I. ${clienteCedula}`, 1.0);
-            const totalHeightFirma = hLegitimacion + hFirmaCliente;
-
-            if (currentY + totalHeightFirma > pageHeight - marginBottom) {
+                // Posicionar la firma justo encima de la fecha
+                // Usamos 'spacing' (12) para el espacio entre la fecha y el bloque
+                currentY = pageHeight - marginBottom - dateHeight - (spacing * 2) - signatureBlockHeight;
+                
+                // **** MODIFICACIÓN: 'spacing' cambiado a spacingFirma (12) y orden/estilo de firma ****
+                addText('________________________________', { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing });
+                addText(`${contadorNombre}`, { align: 'center', spacing: spacingFirma, fontSize: 11, fontStyle: 'bold', lineSpacing: lineSpacing });
+                addText(`Contador Público C.P.C. N ${contadorCpc}`, { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing });
+                // Solo mostrar RIF si se ingresó
+                if (contadorRif) {
+                    addText(`Rif: ${contadorRif}`, { align: 'center', spacing: spacingFirma, fontSize: 11, lineSpacing: lineSpacing }); 
+                }
+                
+                // --- Forzar Página 3 (Anexo) ---
                 doc.addPage();
                 currentY = marginTop;
-            }
-            
-            // Sección de Legitimación
-            addText('LEGITIMACION DE CAPITALES', { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 15, lineSpacing: 1.5 });
-            addText('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', { fontSize: 11, align: 'justify', spacing: 50, lineSpacing: 1.5 });
-            
-            // --- Firma del Cliente (al final de la página) ---
-            // Recalcular Y por si acaso
-            const signatureHeightCliente = hFirmaCliente;
-            
-            let finalY = pageHeight - marginBottom - signatureHeightCliente;
-            
-            // Si el texto anterior + la firma no caben, se usa el final de la página
-            if (currentY > finalY) { 
-                currentY = finalY;
-            } else {
-                // Si hay mucho espacio, bajar la firma
-                 currentY = Math.max(currentY, finalY);
-            }
-            
-            addText('_____________________________________', { align: 'center', spacing: 12, fontSize: 11, lineSpacing: 1.0 });
-            addText(`${clienteNombre}`, { align: 'center', spacing: 12, fontSize: 11, fontStyle: 'bold', lineSpacing: 1.0 });
-            addText(`C.I. ${clienteCedula}`, { align: 'center', spacing: 12, fontSize: 11, lineSpacing: 1.0 });
 
-            // --- 4. Guardar el PDF ---
-            doc.save(`Informe_Aseguramiento_${clienteNombre.replace(/\s/g, '_')}.pdf`);
-            showMessage('PDF generado con éxito.', 'success'); // Mensaje de éxito
-        }
+                // --- Construir el PDF (Página 3 - Anexo) ---
+                
+                addText(`${clienteNombre.toUpperCase()}`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 10, lineSpacing: 1.5 });
+                addText(`${clienteCedula}`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 30, lineSpacing: 1.5 });
+                addText(`INGRESOS MENSUALES EXPRESADO EN BOLÍVARES (BS)`, { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 20, lineSpacing: 1.5 });
+                addText(`Los ingresos corresponden al período desde el ${fechaDesdeLarga} hasta el ${fechaHastaLarga} y los mismos se derivan de:`, { fontSize: 11, align: 'justify', spacing: 30, lineSpacing: 1.5 });
+                
+                doc.autoTable({
+                    head: [['Detalle de los ingresos del periodo:', 'Bolívares']],
+                    body: tableData,
+                    // --- AJUSTE DE ALINEACIÓN DEL FOOTER ---
+                    // Se definen las celdas como objetos para forzar sus estilos individuales
+                    foot: [
+                        [
+                            { content: 'Total Ingresos', styles: { halign: 'left' } },
+                            { content: `Bs. ${formatCurrency(totalIngresos)}`, styles: { halign: 'right' } }
+                        ]
+                    ],
+                    startY: currentY,
+                    margin: { left: marginLeft, right: marginRight, top: marginTop, bottom: marginBottom },
+                    theme: 'grid',
+                    headStyles: { 
+                        fillColor: [221, 214, 254], 
+                        textColor: [31, 41, 55], 
+                        fontStyle: 'bold', 
+                        halign: 'center', 
+                        fontSize: 11, 
+                        font: 'helvetica',
+                        lineColor: [209, 213, 219], 
+                        lineWidth: 0.5
+                    },
+                    footStyles: { 
+                        fillColor: [243, 244, 246], 
+                        textColor: [0, 0, 0], 
+                        fontStyle: 'bold', 
+                        fontSize: 11, 
+                        font: 'helvetica',
+                        lineColor: [209, 213, 219],
+                        lineWidth: 0.5
+                    },
+                    bodyStyles: { 
+                        font: 'helvetica', 
+                        fontSize: 11,
+                        lineColor: [209, 213, 219],
+                        lineWidth: 0.5
+                    },
+                    columnStyles: {
+                        0: { halign: 'left' },
+                        1: { halign: 'right' },
+                    },
+                    didDrawPage: (data) => {
+                        // Si autoTable crea una nueva página, resetear currentY
+                        if (data.pageNumber > 3) {
+                            currentY = marginTop;
+                        } else {
+                            currentY = data.cursor.y;
+                        }
+                    }
+                });
+
+                currentY = doc.autoTable.previous.finalY + 30; // Actualizar Y después de la tabla
+
+                // --- Control de página para la firma del cliente ---
+                // Calcular altura de la firma del cliente
+                const hLegitimacion = calcHeight('LEGITIMACION DE CAPITALES', 1.5) + 15 + calcHeight('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', 1.5) + 50;
+                const hFirmaCliente = calcHeight('_____________________________________', 1.0) + 12 + calcHeight(`${clienteNombre}`, 1.0) + 12 + calcHeight(`C.I. ${clienteCedula}`, 1.0);
+                const totalHeightFirma = hLegitimacion + hFirmaCliente;
+
+                if (currentY + totalHeightFirma > pageHeight - marginBottom) {
+                    doc.addPage();
+                    currentY = marginTop;
+                }
+                
+                // Sección de Legitimación
+                addText('LEGITIMACION DE CAPITALES', { fontSize: 11, fontStyle: 'bold', align: 'center', spacing: 15, lineSpacing: 1.5 });
+                addText('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', { fontSize: 11, align: 'justify', spacing: 50, lineSpacing: 1.5 });
+                
+                // --- Firma del Cliente (al final de la página) ---
+                // Recalcular Y por si acaso
+                const signatureHeightCliente = hFirmaCliente;
+                
+                let finalY = pageHeight - marginBottom - signatureHeightCliente;
+                
+                // Si el texto anterior + la firma no caben, se usa el final de la página
+                if (currentY > finalY) { 
+                    currentY = finalY;
+                } else {
+                    // Si hay mucho espacio, bajar la firma
+                     currentY = Math.max(currentY, finalY);
+                }
+                
+                addText('_____________________________________', { align: 'center', spacing: 12, fontSize: 11, lineSpacing: 1.0 });
+                addText(`${clienteNombre}`, { align: 'center', spacing: 12, fontSize: 11, fontStyle: 'bold', lineSpacing: 1.0 });
+                addText(`C.I. ${clienteCedula}`, { align: 'center', spacing: 12, fontSize: 11, lineSpacing: 1.0 });
+
+                // --- 4. Guardar el PDF ---
+                doc.save(`Informe_Aseguramiento_${clienteNombre.replace(/\s/g, '_')}.pdf`);
+                showMessage('PDF generado con éxito.', 'success'); // Mensaje de éxito
+
+            } catch (pdfError) {
+                console.error("Error durante la generación del PDF:", pdfError);
+                showMessage(`Error al crear el PDF: ${pdfError.message}`, 'error');
+            }
+        } // --- Fin de buildPDF ---
     </script>
 
 </body>
