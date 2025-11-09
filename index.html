@@ -430,7 +430,8 @@
     <!-- Firebase SDKs (NUEVO) -->
     <script type="module">
         // Importar funciones de Firebase (NUEVO)
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // AHORA USANDO LA VERSIÓN 12.5.0
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
         import { 
             getAuth, 
             signInWithEmailAndPassword, 
@@ -439,7 +440,7 @@
             onAuthStateChanged,
             setPersistence,
             browserLocalPersistence
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
         import { 
             getFirestore, 
             doc, 
@@ -455,11 +456,21 @@
             writeBatch,
             serverTimestamp,
             setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-        // --- Configuración de Firebase (debe ser proporcionada por el entorno) ---
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // --- Configuración de Firebase (PROPORCIONADA POR EL USUARIO) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyAJiKG4Q0foMbkmBLPk8kYU31FlE3dIfEQ",
+            authDomain: "formatoaseguramiento.firebaseapp.com",
+            projectId: "formatoaseguramiento",
+            storageBucket: "formatoaseguramiento.firebasestorage.app",
+            messagingSenderId: "781371601755",
+            appId: "1:781371601755:web:4013d52de8196c47c3e07e"
+        };
+        
+        // Dejamos el appId de la configuración, ya que es más específico
+        const appId = firebaseConfig.appId; 
+        
         let app;
         let auth;
         let db;
@@ -478,8 +489,9 @@
 
         try {
             // Si la configuración está vacía, lanzar un error
+            // (Esta comprobación ahora usa la config insertada)
             if (!firebaseConfig.apiKey) {
-                throw new Error("Configuración de Firebase no proporcionada. Siga los pasos de 'firebase_setup.md'.");
+                throw new Error("Configuración de Firebase no proporcionada o incompleta.");
             }
 
             app = initializeApp(firebaseConfig);
@@ -586,27 +598,7 @@
             if (authMessage) authMessage.textContent = error.message || "Error al conectar con la base de datos.";
         }
 
-
-        // --- IDs de Elementos DOM ---
-        /* (MOVIDOS ARRIBA)
-        const authContainer = document.getElementById('auth-container');
-        ...
-        const conceptoEditInput = document.getElementById('conceptoEditInput');
-        */
         
-        // --- Lógica de Autenticación ---
-        /* (MOVIDA ARRIBA)
-        // Asignar listeners a botones de login/registro
-        ...
-        */
-
-        // Observador del estado de autenticación (el controlador principal)
-        /* (MOVIDO ARRIBA)
-        onAuthStateChanged(auth, (user) => {
-            ...
-        });
-        */
-
         // --- Lógica de Firestore (Reemplaza localStorage) ---
 
         function getCollectionPath(collectionName) {
@@ -633,8 +625,11 @@
                     return 'La contraseña debe tener al menos 6 caracteres.';
                 case 'auth/operation-not-allowed':
                     return 'El inicio de sesión por correo y contraseña no está habilitado.';
+                case 'auth/invalid-credential':
+                    return 'Credenciales inválidas (correo o contraseña).';
                 default:
-                    return 'Ocurrió un error desconocido. Inténtalo de nuevo.';
+                    console.warn("Error de Auth no traducido:", code);
+                    return 'Ocurrió un error. Inténtalo de nuevo.';
             }
         }
 
@@ -714,6 +709,7 @@
             const contadoresPath = getCollectionPath('contadores');
             if (contadoresPath) {
                 contadoresUnsubscribe = onSnapshot(query(collection(db, contadoresPath)), (snapshot) => {
+                    const selectedValue = selectContador.value; // Guardar valor actual
                     localContadores = []; // Reset cache local
                     selectContador.innerHTML = '<option value="">-- Selecciona Contador --</option>'; // Reset
                     snapshot.forEach((doc) => {
@@ -726,9 +722,12 @@
                         option.textContent = `${cont.nombre} (CPC: ${cont.cpc})`;
                         selectContador.appendChild(option);
                     });
-                    // Ocultar botones de gestión
-                    document.getElementById('deleteContadorBtn').style.display = 'none';
-                    document.getElementById('updateContadorBtn').style.display = 'none';
+                    selectContador.value = selectedValue; // Restaurar valor si aún existe
+                    // Ocultar botones de gestión si no hay nada seleccionado
+                    if (!selectedValue) {
+                        document.getElementById('deleteContadorBtn').style.display = 'none';
+                        document.getElementById('updateContadorBtn').style.display = 'none';
+                    }
                 }, (error) => console.error("Error al cargar contadores:", error));
             }
 
@@ -736,6 +735,7 @@
             const clientesPath = getCollectionPath('clientes');
             if (clientesPath) {
                 clientesUnsubscribe = onSnapshot(query(collection(db, clientesPath)), (snapshot) => {
+                    const selectedValue = selectCliente.value; // Guardar valor actual
                     localClientes = []; // Reset cache local
                     selectCliente.innerHTML = '<option value="">-- Selecciona Cliente --</option>'; // Reset
                     snapshot.forEach((doc) => {
@@ -748,9 +748,12 @@
                         option.textContent = `${cli.nombre} (CI: ${cli.cedula})`;
                         selectCliente.appendChild(option);
                     });
-                    // Ocultar botones de gestión
-                    document.getElementById('deleteClienteBtn').style.display = 'none';
-                    document.getElementById('updateClienteBtn').style.display = 'none';
+                    selectCliente.value = selectedValue; // Restaurar valor
+                    // Ocultar botones de gestión si no hay nada seleccionado
+                    if (!selectedValue) {
+                        document.getElementById('deleteClienteBtn').style.display = 'none';
+                        document.getElementById('updateClienteBtn').style.display = 'none';
+                    }
                 }, (error) => console.error("Error al cargar clientes:", error));
             }
         }
@@ -1120,7 +1123,7 @@
             contadorSelloInput.value = ''; // Limpiar el input de archivo
             selloPreview.src = ''; // Limpiar la previsualización
             selloPreview.classList.add('hidden'); // Ocultar previsualización
-            if (limpiarSelect) selectContador.value = "";
+            if (limpiarSelect && selectContador) selectContador.value = "";
             document.getElementById('deleteContadorBtn').style.display = 'none';
             document.getElementById('updateContadorBtn').style.display = 'none';
         }
@@ -1129,15 +1132,18 @@
             document.getElementById('clienteTratamiento').value = 'Sr.';
             document.getElementById('clienteNombre').value = '';
             document.getElementById('clienteCedula').value = '';
-            if (limpiarSelect) selectCliente.value = "";
+            if (limpiarSelect && selectCliente) selectCliente.value = "";
             document.getElementById('deleteClienteBtn').style.display = 'none';
             document.getElementById('updateClienteBtn').style.display = 'none';
         }
 
         function clearForm() {
             document.getElementById('report-form').reset();
-            document.getElementById('income-details').innerHTML = '';
-            addIncomeItem();
+            const incomeContainer = document.getElementById('income-details');
+            if (incomeContainer) {
+                incomeContainer.innerHTML = '';
+                addIncomeItem();
+            }
             clearFormContador();
             clearFormCliente();
             setFechasDefault(); // Restablecer fechas
@@ -1306,13 +1312,6 @@
         document.getElementById('deleteClienteBtn').addEventListener('click', deleteCliente);
         
         // --- Resto del Script (Sin cambios) ---
-
-        // Función para mostrar mensajes
-        /* (MOVIDA ARRIBA)
-        function showMessage(message, type = 'success') {
-            ...
-        }
-        */
 
         // Función para agregar campos de ingreso
         function addIncomeItem() {
@@ -1762,7 +1761,7 @@
 
             // --- Control de página para la firma del cliente ---
             // Calcular altura de la firma del cliente
-            const hLegitimacion = calcHeight('LEGITIMACION DE CAPITALES', 1.5) + 15 + calcHeight('Los ingresos descritos...', 1.5) + 50;
+            const hLegitimacion = calcHeight('LEGITIMACION DE CAPITALES', 1.5) + 15 + calcHeight('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', 1.5) + 50;
             const hFirmaCliente = calcHeight('_____________________________________', 1.0) + 12 + calcHeight(`${clienteNombre}`, 1.0) + 12 + calcHeight(`C.I. ${clienteCedula}`, 1.0);
             const totalHeightFirma = hLegitimacion + hFirmaCliente;
 
