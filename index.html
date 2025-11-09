@@ -369,11 +369,21 @@
         async function inicializarConceptos() {
             if (!currentUserId) return;
             const path = getCollectionPath('conceptos'); if (!path) return;
-            const defRef = doc(db, path, 'defaults');
+            // USAMOS 'defaults_v2' PARA FORZAR LA RECARGA SI YA EXISTÍA 'defaults'
+            const defRef = doc(db, path, 'defaults_v2');
             const snap = await getDoc(defRef);
             if (!snap.exists()) {
-                const defaults = ["Actividades Comerciales", "Director de la entidad", "Docente contratado tiempo completo", "Alquiler de inmueble", "Venta de mercancías", "Honorarios profesionales libre ejercicio", "Honorarios Profesionales Médico", "Honorarios Profesionales Médico Ginecólogo Obstetra"];
-                try { const batch = writeBatch(db); defaults.forEach(n => batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp() })); batch.set(defRef, { inicializado: true }); await batch.commit(); } catch (e) { console.error("Error init conceptos:", e); }
+                const defaults = [
+                    "Actividades Comerciales", 
+                    "Director de la entidad", 
+                    "Docente contratado tiempo completo", 
+                    "Alquiler de inmueble", 
+                    "Venta de mercancías", 
+                    "Honorarios profesionales libre ejercicio", 
+                    "Honorarios Profesionales Médico", 
+                    "Honorarios Profesionales Médico Ginecólogo Obstetra"
+                ];
+                try { const batch = writeBatch(db); defaults.forEach(n => batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp() })); batch.set(defRef, { inicializado: true }); await batch.commit(); console.log("Conceptos inicializados."); } catch (e) { console.error("Error init conceptos:", e); }
             }
             cargarConceptosUI();
         }
@@ -390,7 +400,8 @@
                 datalist.innerHTML = '';
 
                 let temp = [];
-                snapshot.forEach(doc => { if (doc.id !== 'defaults') temp.push({ id: doc.id, ...doc.data() }); });
+                // Filtramos para no mostrar los documentos de control 'defaults' o 'defaults_v2'
+                snapshot.forEach(doc => { if (!doc.id.startsWith('defaults')) temp.push({ id: doc.id, ...doc.data() }); });
                 // Ordenar alfabéticamente para mejor UX
                 temp.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
