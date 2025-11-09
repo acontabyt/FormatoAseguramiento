@@ -366,24 +366,33 @@
         async function deleteCliente() { const id = document.getElementById('selectCliente').value; if (id) showConfirmationModal('¿Eliminar cliente?', async () => { try { await deleteDoc(doc(db, getCollectionPath('clientes'), id)); showMessage('Eliminado.', 'success'); clearFormCliente(); } catch (e) { showMessage('Error al eliminar.', 'error'); } }); }
 
         // --- GESTIÓN DE CONCEPTOS CORREGIDA Y ROBUSTA ---
+        const DEFAULT_CONCEPTOS = ["Actividades Comerciales", "Director de la entidad", "Docente contratado tiempo completo", "Alquiler de inmueble", "Venta de mercancías", "Honorarios profesionales libre ejercicio", "Honorarios Profesionales Médico", "Honorarios Profesionales Médico Ginecólogo Obstetra"];
+
         async function inicializarConceptos() {
             if (!currentUserId) return;
             const path = getCollectionPath('conceptos'); if (!path) return;
-            // USAMOS 'defaults_v2' PARA FORZAR LA RECARGA SI YA EXISTÍA 'defaults'
-            const defRef = doc(db, path, 'defaults_v2');
-            const snap = await getDoc(defRef);
-            if (!snap.exists()) {
-                const defaults = [
-                    "Actividades Comerciales", 
-                    "Director de la entidad", 
-                    "Docente contratado tiempo completo", 
-                    "Alquiler de inmueble", 
-                    "Venta de mercancías", 
-                    "Honorarios profesionales libre ejercicio", 
-                    "Honorarios Profesionales Médico", 
-                    "Honorarios Profesionales Médico Ginecólogo Obstetra"
-                ];
-                try { const batch = writeBatch(db); defaults.forEach(n => batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp() })); batch.set(defRef, { inicializado: true }); await batch.commit(); console.log("Conceptos inicializados."); } catch (e) { console.error("Error init conceptos:", e); }
+            // USAMOS 'defaults_v4' PARA FORZAR LA RECARGA SI FALLÓ ANTES
+            const defRef = doc(db, path, 'defaults_v4');
+
+            const getDocWithRetry = async (ref, retries = 3, delay = 1000) => {
+                try { return await getDoc(ref); } catch (err) { if (retries > 0 && err.message.includes("offline")) { await new Promise(r => setTimeout(r, delay)); return getDocWithRetry(ref, retries - 1, delay * 2); } throw err; }
+            };
+
+            try {
+                const snap = await getDocWithRetry(defRef);
+                if (!snap.exists()) {
+                    const batch = writeBatch(db); 
+                    DEFAULT_CONCEPTOS.forEach(n => batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp() })); 
+                    batch.set(defRef, { inicializado: true }); 
+                    await batch.commit(); 
+                    console.log("Conceptos inicializados (v4)."); 
+                }
+            } catch (e) {
+                if (e.message.includes("offline")) {
+                     console.warn("Init conceptos omitido (offline). Se usarán defaults locales.");
+                } else {
+                     console.error("Error init conceptos:", e);
+                }
             }
             cargarConceptosUI();
         }
@@ -391,26 +400,30 @@
         function cargarConceptosUI() {
             const path = getCollectionPath('conceptos'); if (!path) return;
             if (conceptosUnsubscribe) conceptosUnsubscribe();
-            // Quitamos el 'where' problemático y filtramos en cliente
             conceptosUnsubscribe = onSnapshot(query(collection(db, path)), (snapshot) => {
                 localConceptos = [];
                 const select = document.getElementById('conceptosSelect');
                 const datalist = document.getElementById('conceptos-list');
-                select.innerHTML = '<option value="">-- Seleccionar para Editar/Eliminar --</option>'; // Opción default vital
+                select.innerHTML = '<option value="">-- Seleccionar para Editar/Eliminar --</option>';
                 datalist.innerHTML = '';
 
                 let temp = [];
-                // Filtramos para no mostrar los documentos de control 'defaults' o 'defaults_v2'
                 snapshot.forEach(doc => { if (!doc.id.startsWith('defaults')) temp.push({ id: doc.id, ...doc.data() }); });
-                // Ordenar alfabéticamente para mejor UX
                 temp.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
-                temp.forEach(c => {
-                    localConceptos.push(c);
-                    const optS = document.createElement('option'); optS.value = c.id; optS.textContent = c.nombre; select.appendChild(optS);
-                    const optD = document.createElement('option'); optD.value = c.nombre; datalist.appendChild(optD);
-                });
-                resetConceptoForm(); // Asegurar estado limpio al recargar
+                // FALLBACK INMEDIATO SI LA BASE DE DATOS ESTÁ VACÍA O LENTA
+                if (temp.length === 0) {
+                    DEFAULT_CONCEPTOS.forEach(c => {
+                         const optD = document.createElement('option'); optD.value = c; datalist.appendChild(optD);
+                    });
+                } else {
+                    temp.forEach(c => {
+                        localConceptos.push(c);
+                        const optS = document.createElement('option'); optS.value = c.id; optS.textContent = c.nombre; select.appendChild(optS);
+                        const optD = document.createElement('option'); optD.value = c.nombre; datalist.appendChild(optD);
+                    });
+                }
+                resetConceptoForm();
             });
         }
 
