@@ -201,7 +201,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                     Detalle de los Ingresos del Período
                 </legend>
-                <!-- *** CAMBIO: Lista precargada para carga instantánea *** -->
+                <!-- Lista precargada para SUGERENCIAS en el campo de ingreso -->
                 <datalist id="conceptos-list">
                     <option value="Actividades Comerciales"></option>
                     <option value="Alquiler de Inmueble"></option>
@@ -250,7 +250,7 @@
                         <button type="button" id="conceptoBtnGuardarEdicion" class="btn-save hidden" title="Guardar Cambios">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
                         </button>
-                        <!-- NUEVO: Botón Cancelar Edición (Oculto por defecto) -->
+                        <!-- Botón Cancelar Edición (Oculto por defecto) -->
                         <button type="button" id="conceptoBtnCancelarEdicion" class="p-2.5 font-semibold rounded-full shadow-md bg-gray-200 text-gray-800 hover:bg-gray-300 focus:outline-none hidden" title="Cancelar Edición">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                         </button>
@@ -377,7 +377,6 @@
         async function deleteCliente() { const id = document.getElementById('selectCliente').value; if (id) showConfirmationModal('¿Eliminar cliente?', async () => { try { await deleteDoc(doc(db, getCollectionPath('clientes'), id)); showMessage('Eliminado.', 'success'); clearFormCliente(); } catch (e) { showMessage('Error al eliminar.', 'error'); } }); }
 
         // --- GESTIÓN DE CONCEPTOS CORREGIDA Y ROBUSTA ---
-        // Lista de conceptos predeterminada y ordenada.
         const DEFAULT_CONCEPTOS = [
             "Actividades Comerciales", 
             "Alquiler de Inmueble", 
@@ -390,64 +389,37 @@
             "Sueldos y Salarios"
         ];
 
+        // Esta función asegura que los conceptos por defecto existan en Firestore para el usuario actual.
         async function inicializarConceptos() {
             if (!currentUserId) return;
             const path = getCollectionPath('conceptos'); if (!path) return;
             
-            /* --- INICIO DE LA CORRECCIÓN --- */
-            // Se cambia a 'defaults_v6' para forzar una nueva verificación para todos los usuarios.
+            // Usamos 'defaults_v6' para forzar una nueva verificación si es necesario.
             const defRef = doc(db, path, 'defaults_v6');
-            /* --- FIN DE LA CORRECCIÓN --- */
-
-            const getDocWithRetry = async (ref, retries = 3, delay = 1000) => {
-                try { return await getDoc(ref); } catch (err) { if (retries > 0 && err.message.includes("offline")) { await new Promise(r => setTimeout(r, delay)); return getDocWithRetry(ref, retries - 1, delay * 2); } throw err; }
-            };
 
             try {
-                const snap = await getDocWithRetry(defRef);
+                const snap = await getDoc(defRef);
                 if (!snap.exists()) {
-                    
-                    /* --- INICIO DE LA CORRECCIÓN --- */
-                    // Lógica robusta para agregar solo los conceptos default que falten, evitando duplicados.
-                    
-                    // 1. Obtener todos los conceptos que ya existen en la BD del usuario.
                     const q = query(collection(db, path));
                     const existingSnap = await getDocs(q);
                     const existingNames = new Set();
-                    existingSnap.forEach(doc => {
-                        if (doc.data().nombre) {
-                            existingNames.add(doc.data().nombre.toLowerCase());
-                        }
-                    });
+                    existingSnap.forEach(doc => { if (doc.data().nombre) existingNames.add(doc.data().nombre.toLowerCase()); });
 
-                    // 2. Preparar un batch para agregar solo los conceptos default que NO existen.
                     const batch = writeBatch(db);
                     let addedCount = 0;
                     DEFAULT_CONCEPTOS.forEach(n => {
                         if (!existingNames.has(n.toLowerCase())) {
-                            batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp() });
+                            batch.set(doc(collection(db, path)), { nombre: n, createdAt: serverTimestamp(), isDefault: true });
                             addedCount++;
                         }
                     });
-
-                    // 3. Marcar la bandera 'v6' para que esto no se ejecute de nuevo.
-                    batch.set(defRef, { inicializado: true, added: addedCount }); 
+                    batch.set(defRef, { inicializado: true }); 
                     await batch.commit(); 
-                    console.log(`Conceptos inicializados (v6). Se agregaron ${addedCount} nuevos conceptos default.`);
-                    /* --- FIN DE LA CORRECCIÓN --- */
-
+                    console.log(`Conceptos inicializados (v6). Agregados: ${addedCount}`);
                 }
             } catch (e) {
-                if (e.message.includes("offline")) {
-                     console.warn("Init conceptos omitido (offline). Se usarán defaults locales.");
-                     showMessage('Error al cargar conceptos iniciales (posiblemente offline). La lista para editar/eliminar estará vacía.', 'error');
-                } else {
-                     console.error("Error init conceptos:", e);
-                     showMessage(`Error al inicializar conceptos: ${e.message}`, 'error');
-                }
+                console.error("Error init conceptos:", e);
             }
-            // Llama a cargarConceptosUI sin importar si hubo error, 
-            // ya que la lista pre-cargada en HTML sirve de fallback.
             cargarConceptosUI();
         }
 
@@ -460,54 +432,37 @@
                 const select = document.getElementById('conceptosSelect');
                 const datalist = document.getElementById('conceptos-list');
                 
-                // Limpia ambas listas antes de repoblar
                 select.innerHTML = '<option value="">-- Seleccionar para Editar/Eliminar --</option>';
                 datalist.innerHTML = ''; 
 
-                let temp = []; // Lista de conceptos personalizados desde la BD
-                snapshot.forEach(doc => { if (!doc.id.startsWith('defaults')) temp.push({ id: doc.id, ...doc.data() }); });
+                // Obtenemos TODOS los conceptos de la BD (incluidos los defaults que acabamos de insertar)
+                snapshot.forEach(doc => { 
+                    if (doc.id !== 'defaults_v6') {
+                        localConceptos.push({ id: doc.id, ...doc.data() }); 
+                    }
+                });
                 
-                // Ordena la lista de la BD
-                temp.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+                // Ordenar alfabéticamente
+                localConceptos.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
 
-                // --- INICIO DE LA CORRECCIÓN ---
-
-                // 1. Llenar la lista de GESTIÓN (el <select>) solo con los conceptos de la BD
-                temp.forEach(c => {
-                    localConceptos.push(c); // Para la lógica interna de edición/eliminación
+                // Llenar tanto el select de gestión como el datalist de sugerencias
+                localConceptos.forEach(c => {
+                    // Llenar Select de Gestión
                     const optS = document.createElement('option'); 
                     optS.value = c.id; 
                     optS.textContent = c.nombre; 
                     select.appendChild(optS);
-                });
 
-                // 2. Crear una lista combinada (Defaults + BD) para las SUGERENCIAS (el <datalist>)
-                const nombresDeBD = temp.map(c => c.nombre);
-                const allConceptNames = [...DEFAULT_CONCEPTOS, ...nombresDeBD];
-                
-                // 3. Usar un Set para eliminar duplicados (por si el usuario agregó un concepto que ya era default)
-                const uniqueNames = [...new Set(allConceptNames)];
-                
-                // 4. Ordenar la lista combinada alfabéticamente
-                uniqueNames.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
-
-                // 5. Poblar el <datalist> con la lista combinada, única y ordenada
-                uniqueNames.forEach(c => {
+                    // Llenar Datalist de Sugerencias
                     const optD = document.createElement('option'); 
-                    optD.value = c; 
+                    optD.value = c.nombre; 
                     datalist.appendChild(optD);
                 });
                 
-                // --- FIN DE LA CORRECCIÓN ---
-
                 resetConceptoForm();
             }, (error) => {
-                // En caso de error, el datalist precargado en HTML sigue funcionando.
-                // Solo actualizamos la UI de "Gestionar" para mostrar el error.
-                console.error("Error al cargar conceptos (onSnapshot):", error);
-                document.getElementById('conceptosSelect').innerHTML = '<option value="">-- Error al cargar --</option>';
-                showMessage('Error al cargar conceptos guardados. Usando lista predeterminada.', 'error');
-                resetConceptoForm();
+                console.error("Error loading concepts:", error);
+                showMessage('Error al cargar conceptos. Revise su conexión.', 'error');
             });
         }
 
@@ -524,7 +479,7 @@
             const val = document.getElementById('conceptoEditInput').value.trim();
             if (val) {
                 if (localConceptos.some(c => c.nombre.toLowerCase() === val.toLowerCase())) return showMessage('Concepto ya existe.', 'error');
-                try { await addDoc(collection(db, getCollectionPath('conceptos')), { nombre: val, createdAt: serverTimestamp() }); showMessage('Concepto agregado.', 'success'); document.getElementById('conceptoEditInput').value = ''; } catch (e) { showMessage('Error al agregar.', 'error'); }
+                try { await addDoc(collection(db, getCollectionPath('conceptos')), { nombre: val, createdAt: serverTimestamp(), isDefault: false }); showMessage('Concepto agregado.', 'success'); document.getElementById('conceptoEditInput').value = ''; } catch (e) { showMessage('Error al agregar.', 'error'); }
             }
         });
 
@@ -579,9 +534,7 @@
         window.addIncomeItem = function() {
             const c = document.getElementById('income-details');
             const d = document.createElement('div'); d.className = 'flex flex-col md:flex-row items-center gap-3 income-item';
-            /* --- INICIO DE LA CORRECCIÓN (ESTILO DEL BOTÓN DE ELIMINAR) --- */
             d.innerHTML = `<input type="text" placeholder="Concepto" class="w-full md:flex-grow p-2 border border-gray-300 rounded-md income-concept" list="conceptos-list" required><input type="text" inputmode="decimal" placeholder="Monto (Bs.)" class="w-full md:w-32 p-2 border border-gray-300 rounded-md income-amount" required><button type="button" class="p-2.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-full btn-remove-income flex-shrink-0 transition-colors duration-200"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>`;
-            /* --- FIN DE LA CORRECCIÓN --- */
             d.querySelector('.income-amount').addEventListener('input', formatCurrencyInput);
             d.querySelector('.btn-remove-income').onclick = () => c.querySelectorAll('.income-item').length > 1 ? c.removeChild(d) : showMessage('Debe haber al menos un concepto.', 'error');
             c.appendChild(d);
@@ -621,7 +574,6 @@
                     const lines = doc.splitTextToSize(txt, usableW - (opts.indent || 0));
                     const h = (lines.length * (opts.fontSize || 11) * (opts.lineSpacing || 1.5)) - ((opts.fontSize || 11) * ((opts.lineSpacing || 1.5) - 1));
                     
-                    // --- CAMBIO: Se reduce el margen inferior de 85.05 (3cm) a 70.86 (2.5cm) ---
                     if (y + h > pageH - 70.86) { doc.addPage(); y = 141.75; }
                     
                     doc.text(txt, opts.align === 'center' ? doc.internal.pageSize.getWidth() / 2 : (opts.align === 'right' ? doc.internal.pageSize.getWidth() - 60 : 60 + (opts.indent || 0)), y, { align: opts.align || 'justify', maxWidth: usableW - (opts.indent || 0), lineHeightFactor: opts.lineSpacing || 1.5 });
@@ -635,15 +587,9 @@
                 addTxt('Responsabilidad de la persona que percibe los ingresos', { fontStyle: 'bold', spacing: 20 });
                 addTxt(`El ${clTrat} ${clNom}, es responsable de la preparación y presentación del importe de sus ingresos que se adjunta en este informe, incluyendo la integridad, legalidad y veracidad de los documentos suministrados. Esta responsabilidad incluye la aseveración de que todos y cada uno de los ingresos detallados en la relación, provienen de actividades legítimas y de comprobable licito ejercicio.`, { indent: 20, spacing: 25 });
                 addTxt('Responsabilidad del Contador Público Independiente', { fontStyle: 'bold', spacing: 20 });
-                
-                // --- CAMBIO: Se unen los dos párrafos en una sola llamada ---
-                // Se asegura que ambos párrafos se traten como un solo bloque
-                // y no se separen entre páginas.
                 const respP1 = `Mi responsabilidad es expresar una opinión sobre la relación de ingresos obtenida por el ${clTrat} ${clNom}, durante el periodo señalado de acuerdo con mis procedimientos, los cuales he realizado de conformidad con la Norma Internacional para encargos de aseguramiento, los cuales he realizado de conformidad con la Normas Internacionales de Encargos de Aseguramiento NIEA 3000, esta norma prevé que cumpla con los requerimientos éticos y que planifique y realice los procedimientos para obtener una seguridad razonable de que, en todos los aspectos materiales, la relación está presentada razonablemente.`;
                 const respP2 = `Un Encargo de Aseguramiento implica llevar a cabo procedimientos para obtener evidencia acerca de la razonabilidad de las aseveraciones emitidas por el responsable. Los procedimientos seleccionados dependen del juicio profesional del contador público, que incluye evaluar los riesgos acerca de que los ingresos no estén presentados razonablemente. El objetivo es obtener una seguridad razonable como base de una forma positiva de expresión. Por lo tanto, mi responsabilidad es expresar una opinión sobre los ingresos del ${clTrat} ${clNom}, para el periodo ${fmtDate(fDes)} hasta el ${fmtDate(fHas)}, con base al examen sobre la evidencia obtenida.`;
-                
                 addTxt(`${respP1}\n\n${respP2}`, { indent: 20, spacing: 25 });
-                // --- FIN DEL CAMBIO ---
 
                 // --- PÁGINA 2 ---
                 doc.addPage(); y = 141.75;
@@ -654,31 +600,31 @@
                 addTxt('Usuarios Previstos y Propósitos', { fontStyle: 'bold', spacing: 20 });
                 addTxt(`Este informe y la relación que se adjunta están dirigidos únicamente al ${getVal('entidadDirigida')} el cual lo ha requerido para ${getVal('motivoInforme')}.`, { indent: 20, spacing: 40 });
 
-                // Bloque de Firma del Contador (se alinea al final de la página 2)
+                // Bloque de Firma del Contador
                 const sigH = (4 * 11 * 1) + (cRif ? 12 : 0);
                 
-                // --- CAMBIO: Se ajusta la Y de la firma al nuevo margen inferior de 70.86 ---
-                let sigY = pageH - 70.86 - 15 - (12*2) - sigH; // Calcula Y para la firma
+                /* --- CAMBIO: SUBIR LA FIRMA UNA LÍNEA --- */
+                // Reduje el margen inferior de 70.86 a 85 para subir un poco la firma
+                // y dejar espacio para la fecha debajo.
+                let sigY = pageH - 85 - sigH; 
                 
                 if (sealData) {
                      const ratio = Math.min((5.3 * 28.35) / sealW, (2.1 * 28.35) / sealH);
                      const sW = Math.min(sealW * ratio, sealW * 0.75), sH = Math.min(sealH * ratio, sealH * 0.75);
-                     // Coloca el sello encima de la firma
                      doc.addImage(sealData, 'PNG', doc.internal.pageSize.getWidth() - 60 - sW, sigY - sH - 6, sW, sH);
                 }
-                // Coloca la fecha alineada con la firma pero a la izquierda
                 
-                // --- CAMBIO: Se ajusta la Y de la fecha al nuevo margen inferior de 70.86 ---
-                y = pageH - 70.86 - 15; // Y para la fecha
-                
-                addTxt(`${getVal('lugar')}, ${fmtDate(fDoc, true)}`, { align: 'left', spacing: 0, lineSpacing: 1.5 });
-                
-                // Coloca la firma
+                // Primero dibujamos la firma (que ahora está más arriba)
                 y = sigY;
                 addTxt('________________________________', { align: 'center', spacing: 12, lineSpacing: 1 });
                 addTxt(cNom, { align: 'center', spacing: 12, fontStyle: 'bold', lineSpacing: 1 });
                 addTxt(`Contador Público C.P.C. N ${cCpc}`, { align: 'center', spacing: 12, lineSpacing: 1 });
                 if (cRif) addTxt(`Rif: ${cRif}`, { align: 'center', spacing: 12, lineSpacing: 1 });
+
+                // Luego, dibujamos la fecha y lugar MÁS ABAJO, dejando la línea vacía solicitada.
+                // Usamos un Y fijo cerca del margen inferior real.
+                y = pageH - 50; 
+                addTxt(`${getVal('lugar')}, ${fmtDate(fDoc, true)}`, { align: 'left', spacing: 0, lineSpacing: 1.5 });
 
                 // --- PÁGINA 3 ---
                 doc.addPage(); y = 141.75;
@@ -687,40 +633,30 @@
                 addTxt('INGRESOS MENSUALES EXPRESADO EN BOLÍVARES (BS)', { fontStyle: 'bold', align: 'center', spacing: 20 });
                 addTxt(`Los ingresos corresponden al período desde el ${fmtDate(fDes, true)} hasta el ${fmtDate(fHas, true)} y los mismos se derivan de:`, { spacing: 30 });
 
-                // Tabla de Ingresos
-                // --- CAMBIO: Se ajusta el margen inferior de la tabla a 70.86 ---
                 doc.autoTable({ head: [['Detalle de los ingresos del periodo:', 'Bolívares']], body: data, foot: [[{ content: 'Total Ingresos', styles: { halign: 'left' } }, { content: `Bs. ${fmtCur(total)}`, styles: { halign: 'right' } }]], startY: y, margin: { left: 60, right: 60, top: 141.75, bottom: 70.86 }, theme: 'grid', headStyles: { fillColor: [221, 214, 254], textColor: [31, 41, 55], fontStyle: 'bold', halign: 'center' }, footStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: 'bold' }, columnStyles: { 1: { halign: 'right' } }, didDrawPage: (d) => y = d.cursor.y > 141.75 ? d.cursor.y : 141.75 });
                 y = doc.autoTable.previous.finalY + 30;
 
-                // Bloque de Legitimación y Firma del Cliente
-                const clSigH = 100; // Altura estimada
-                
-                // --- CAMBIO: Se ajusta el chequeo de página al nuevo margen de 70.86 ---
-                if (y + clSigH > pageH - 70.86) { doc.addPage(); y = 141.75; } // Si no cabe, nueva página
+                const clSigH = 100;
+                if (y + clSigH > pageH - 70.86) { doc.addPage(); y = 141.75; }
                 
                 addTxt('LEGITIMACION DE CAPITALES', { fontStyle: 'bold', align: 'center', spacing: 15 });
                 addTxt('Los ingresos descritos en la presente relación proceden de actividad lícita, lo cual puede ser corroborado por los organismos competentes y no tienen relación alguna con actividades, acciones o hechos ilícitos contemplados en las leyes venezolanas.', { spacing: 50 });
 
-                // --- CAMBIO: Se ajusta la Y de la firma al nuevo margen de 70.86 ---
-                y = Math.max(y, pageH - 70.86 - 60); // Asegura que la firma esté al fondo si hay espacio
+                y = Math.max(y, pageH - 70.86 - 60);
                 
                 addTxt('_____________________________________', { align: 'center', spacing: 12, lineSpacing: 1 });
                 addTxt(clNom, { align: 'center', spacing: 12, fontStyle: 'bold', lineSpacing: 1 });
-                
-                /* INICIO DE LA CORRECCIÓN:
-                  Se restaura el código faltante que fue cortado.
-                  Y se cambia el comentario de HTML a JS.
-                */
-                
-                // Se agrega la cédula del cliente, que faltaba en la firma
                 addTxt(clCed, { align: 'center', spacing: 12, fontStyle: 'bold', lineSpacing: 1 });
 
-            // Cierre del bloque 'try'
+                /* --- CAMBIO: NOMBRE DEL ARCHIVO CON EL NOMBRE DEL CLIENTE --- */
+                // Se sanea el nombre del cliente para usarlo en el nombre del archivo
+                const safeClientName = clNom.replace(/[^a-zA-Z0-9]/g, '_');
+                doc.save(`Informe_Aseguramiento_${safeClientName}.pdf`);
+
             } catch (error) {
                 console.error('Error al generar el PDF:', error);
                 showMessage('Error al generar el PDF: ' + error.message, 'error');
             }
-        // Cierre de la función 'buildPDF'
         }
 
     </script>
